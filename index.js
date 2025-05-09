@@ -6,7 +6,7 @@ const ACCESS_TOKEN = "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";
 const API_VERSION = '2023-10';
 
 async function fetchFiles() {
-  const endpoint = `https://${SHOP_URL}/admin/api/${API_VERSION}/files.json`;
+  const endpoint = `https://demo-storetesting.myshopify.com/admin/api/2023-10/files.json`;
 
   try {
     const response = await axios.get(endpoint, {
