@@ -7,7 +7,7 @@ const csv = require('csv-parser');
 const NEW_SHOP_URL = '47k2tr-hj.myshopify.com';
 const NEW_ACCESS_TOKEN = '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'; // Access token for the new store
 const API_VERSION = '2023-10';
-const CSV_PATH = './shopify_files.csv';
+const CSV_PATH = './shopify_files (1).csv';
 
 const uploadFileToShopify = async (base64Data, filename, alt) => {
   const mutation = `
