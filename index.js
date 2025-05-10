@@ -1,5 +1,7 @@
 require('dotenv').config();
 const axios = require('axios');
+const fs = require('fs');
+const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 
 const SHOP_URL = "demo-storetesting.myshopify.com";
 const ACCESS_TOKEN = "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";
@@ -10,7 +12,7 @@ async function fetchFilesGraphQL() {
 
   const query = `
     {
-      files(first: 20) {
+      files(first: 50) {
         edges {
           node {
             ... on GenericFile {
@@ -25,6 +27,7 @@ async function fetchFilesGraphQL() {
               image {
                 url
               }
+              createdAt
             }
           }
         }
@@ -40,21 +43,7 @@ async function fetchFilesGraphQL() {
       }
     });
 
-    const files = response.data.data.files.edges;
-    if (files.length === 0) {
-      console.log('No files found in the store.');
-      return;
-    }
-
-    console.log('📂 Files in Shopify Store (GraphQL):\n');
-    files.forEach(({ node }) => {
-      if (node.url) {
-        console.log(`- File URL => ${node.url}`);
-      } else if (node.image && node.image.url) {
-        console.log(`- Image URL => ${node.image.url}`);
-      }
-    });
-
+    return response.data.data.files.edges;
   } catch (error) {
     console.error('❌ Error fetching files via GraphQL:');
     if (error.response) {
@@ -62,7 +51,32 @@ async function fetchFilesGraphQL() {
     } else {
       console.error(error.message);
     }
+    return [];
   }
 }
 
-fetchFilesGraphQL();
+async function exportToCSV() {
+  const files = await fetchFilesGraphQL();
+
+  const csvWriter = createCsvWriter({
+    path: 'shopify_files.csv',
+    header: [
+      { id: 'id', title: 'ID' },
+      { id: 'alt', title: 'ALT_TEXT' },
+      { id: 'url', title: 'URL' },
+      { id: 'createdAt', title: 'CREATED_AT' }
+    ]
+  });
+
+  const records = files.map(({ node }) => ({
+    id: node.id,
+    alt: node.alt || 'N/A',
+    url: node.url || (node.image && node.image.url) || 'N/A',
+    createdAt: node.createdAt || 'N/A'
+  }));
+
+  await csvWriter.writeRecords(records);
+  console.log('✅ shopify_files.csv created successfully!');
+}
+
+exportToCSV();
