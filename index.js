@@ -8,58 +8,71 @@ const createCsvWriter = require('csv-writer').createObjectCsvWriter;
 const app = express();
 const PORT = 3000;
 
+// Your Shopify credentials
 const SHOP_URL = "demo-storetesting.myshopify.com";
 const ACCESS_TOKEN = "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";
 const API_VERSION = '2023-10';
 
-async function fetchFilesGraphQL() {
+// Fetch all files using cursor-based pagination
+async function fetchAllFilesGraphQL() {
   const endpoint = `https://${SHOP_URL}/admin/api/${API_VERSION}/graphql.json`;
 
-  const query = `
-    {
-      files(first: 50) {
-        edges {
-          node {
-            ... on GenericFile {
-              id
-              alt
-              url
-              createdAt
-            }
-            ... on MediaImage {
-              id
-              alt
-              image {
+  let allFiles = [];
+  let hasNextPage = true;
+  let endCursor = null;
+
+  while (hasNextPage) {
+    const query = `
+      {
+        files(first: 100${endCursor ? `, after: "${endCursor}"` : ''}) {
+          edges {
+            cursor
+            node {
+              ... on GenericFile {
+                id
+                alt
                 url
+                createdAt
               }
-              createdAt
+              ... on MediaImage {
+                id
+                alt
+                image {
+                  url
+                }
+                createdAt
+              }
             }
+          }
+          pageInfo {
+            hasNextPage
           }
         }
       }
-    }
-  `;
+    `;
 
-  try {
-    const response = await axios.post(endpoint, { query }, {
-      headers: {
-        'X-Shopify-Access-Token': ACCESS_TOKEN,
-        'Content-Type': 'application/json',
-      }
-    });
+    try {
+      const response = await axios.post(endpoint, { query }, {
+        headers: {
+          'X-Shopify-Access-Token': ACCESS_TOKEN,
+          'Content-Type': 'application/json',
+        }
+      });
 
-    return response.data.data.files.edges;
-  } catch (error) {
-    console.error('❌ Error fetching files via GraphQL:');
-    if (error.response) {
-      console.error(error.response.data);
-    } else {
-      console.error(error.message);
+      const { edges, pageInfo } = response.data.data.files;
+      allFiles.push(...edges);
+      hasNextPage = pageInfo.hasNextPage;
+      endCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
+    } catch (error) {
+      console.error('❌ Error during GraphQL fetch:', error.response?.data || error.message);
+      break;
     }
-    return [];
   }
+
+  return allFiles;
 }
 
+// Route: Homepage with download button
 app.get('/', (req, res) => {
   res.send(`
     <html>
@@ -72,8 +85,9 @@ app.get('/', (req, res) => {
   `);
 });
 
+// Route: Generates CSV and serves it for download
 app.get('/download', async (req, res) => {
-  const files = await fetchFilesGraphQL();
+  const files = await fetchAllFilesGraphQL();
 
   const csvWriter = createCsvWriter({
     path: 'shopify_files.csv',
@@ -98,6 +112,7 @@ app.get('/download', async (req, res) => {
   res.download(filePath, 'shopify_files.csv');
 });
 
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server is running at http://localhost:${PORT}`);
 });
