@@ -1,118 +1,104 @@
 require('dotenv').config();
-const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+const csv = require('csv-parser');
 
-const app = express();
-const PORT = 3000;
-
-// Your Shopify credentials
-const SHOP_URL = "demo-storetesting.myshopify.com";
-const ACCESS_TOKEN = "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";
+const NEW_SHOP_URL = '47k2tr-hj.myshopify.com';
+const NEW_ACCESS_TOKEN = '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'; // Access token for the new store
 const API_VERSION = '2023-10';
+const CSV_PATH = './shopify_files.csv';
 
-// Fetch all files using cursor-based pagination
-async function fetchAllFilesGraphQL() {
-  const endpoint = `https://${SHOP_URL}/admin/api/${API_VERSION}/graphql.json`;
-
-  let allFiles = [];
-  let hasNextPage = true;
-  let endCursor = null;
-
-  while (hasNextPage) {
-    const query = `
-      {
-        files(first: 100${endCursor ? `, after: "${endCursor}"` : ''}) {
-          edges {
-            cursor
-            node {
-              ... on GenericFile {
-                id
-                alt
-                url
-                createdAt
-              }
-              ... on MediaImage {
-                id
-                alt
-                image {
-                  url
-                }
-                createdAt
-              }
+const uploadFileToShopify = async (base64Data, filename, alt) => {
+  const mutation = `
+    mutation fileCreate($files: [FileCreateInput!]!) {
+      fileCreate(files: $files) {
+        files {
+          alt
+          createdAt
+          fileStatus
+          preview {
+            image {
+              url
             }
           }
-          pageInfo {
-            hasNextPage
-          }
+        }
+        userErrors {
+          field
+          message
         }
       }
-    `;
+    }
+  `;
 
-    try {
-      const response = await axios.post(endpoint, { query }, {
+  const variables = {
+    files: [
+      {
+        originalSource: `data:image/jpeg;base64,${base64Data}`,
+        alt: alt || filename,
+        contentType: 'IMAGE'
+      }
+    ]
+  };
+
+  const endpoint = `https://${NEW_SHOP_URL}/admin/api/${API_VERSION}/graphql.json`;
+
+  try {
+    const response = await axios.post(
+      endpoint,
+      { query: mutation, variables },
+      {
         headers: {
-          'X-Shopify-Access-Token': ACCESS_TOKEN,
+          'X-Shopify-Access-Token': NEW_ACCESS_TOKEN,
           'Content-Type': 'application/json',
         }
-      });
+      }
+    );
 
-      const { edges, pageInfo } = response.data.data.files;
-      allFiles.push(...edges);
-      hasNextPage = pageInfo.hasNextPage;
-      endCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
-    } catch (error) {
-      console.error('❌ Error during GraphQL fetch:', error.response?.data || error.message);
-      break;
+    const result = response.data.data.fileCreate;
+    if (result.userErrors.length) {
+      console.error('❌ Upload Error:', result.userErrors);
+    } else {
+      console.log(`✅ Uploaded: ${filename}`);
     }
+
+  } catch (error) {
+    console.error('❌ Upload Request Failed:', error.message);
   }
+};
 
-  return allFiles;
-}
+const downloadAndUpload = async (url, alt) => {
+  const filename = path.basename(url);
 
-// Route: Homepage with download button
-app.get('/', (req, res) => {
-  res.send(`
-    <html>
-      <head><title>Download Shopify Files CSV</title></head>
-      <body>
-        <h1>📥 Download Shopify Files</h1>
-        <a href="/download" download><button>Download CSV</button></a>
-      </body>
-    </html>
-  `);
-});
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+    });
 
-// Route: Generates CSV and serves it for download
-app.get('/download', async (req, res) => {
-  const files = await fetchAllFilesGraphQL();
+    const buffer = Buffer.from(response.data, 'binary');
+    const base64Data = buffer.toString('base64');
 
-  const csvWriter = createCsvWriter({
-    path: 'shopify_files.csv',
-    header: [
-      { id: 'id', title: 'ID' },
-      { id: 'alt', title: 'ALT_TEXT' },
-      { id: 'url', title: 'URL' },
-      { id: 'createdAt', title: 'CREATED_AT' }
-    ]
-  });
+    await uploadFileToShopify(base64Data, filename, alt);
 
-  const records = files.map(({ node }) => ({
-    id: node.id,
-    alt: node.alt || 'N/A',
-    url: node.url || (node.image && node.image.url) || 'N/A',
-    createdAt: node.createdAt || 'N/A'
-  }));
+  } catch (err) {
+    console.error(`❌ Failed to download or upload ${filename}: ${err.message}`);
+  }
+};
 
-  await csvWriter.writeRecords(records);
+const startUpload = () => {
+  fs.createReadStream(CSV_PATH)
+    .pipe(csv())
+    .on('data', async (row) => {
+      const url = row.URL;
+      const alt = row.ALT_TEXT;
 
-  const filePath = path.join(__dirname, 'shopify_files.csv');
-  res.download(filePath, 'shopify_files.csv');
-});
+      if (url && url.startsWith('http')) {
+        await downloadAndUpload(url, alt);
+      }
+    })
+    .on('end', () => {
+      console.log('🎉 Upload process completed.');
+    });
+};
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running at http://localhost:${PORT}`);
-});
+startUpload();
