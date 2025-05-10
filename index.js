@@ -1,7 +1,12 @@
 require('dotenv').config();
+const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
+const path = require('path');
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+
+const app = express();
+const PORT = 3000;
 
 const SHOP_URL = "demo-storetesting.myshopify.com";
 const ACCESS_TOKEN = "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";
@@ -55,7 +60,19 @@ async function fetchFilesGraphQL() {
   }
 }
 
-async function exportToCSV() {
+app.get('/', (req, res) => {
+  res.send(`
+    <html>
+      <head><title>Download Shopify Files CSV</title></head>
+      <body>
+        <h1>📥 Download Shopify Files</h1>
+        <a href="/download" download><button>Download CSV</button></a>
+      </body>
+    </html>
+  `);
+});
+
+app.get('/download', async (req, res) => {
   const files = await fetchFilesGraphQL();
 
   const csvWriter = createCsvWriter({
@@ -76,7 +93,11 @@ async function exportToCSV() {
   }));
 
   await csvWriter.writeRecords(records);
-  console.log('✅ shopify_files.csv created successfully!');
-}
 
-exportToCSV();
+  const filePath = path.join(__dirname, 'shopify_files.csv');
+  res.download(filePath, 'shopify_files.csv');
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running at http://localhost:${PORT}`);
+});
