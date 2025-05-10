@@ -69,21 +69,28 @@ const uploadFileToShopify = async (base64Data, filename, alt) => {
 
 const downloadAndUpload = async (url, alt) => {
   const filename = path.basename(url);
+  console.log('Downloading from URL:', url);
 
   try {
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
     });
 
-    const buffer = Buffer.from(response.data, 'binary');
-    const base64Data = buffer.toString('base64');
+    if (response.status === 200) {
+      const buffer = Buffer.from(response.data, 'binary');
+      const base64Data = buffer.toString('base64');
+      console.log('Base64 data prepared for upload');
 
-    await uploadFileToShopify(base64Data, filename, alt);
+      await uploadFileToShopify(base64Data, filename, alt);
+    } else {
+      console.error(`❌ Failed to download from ${url}, status code: ${response.status}`);
+    }
 
   } catch (err) {
     console.error(`❌ Failed to download or upload ${filename}: ${err.message}`);
   }
 };
+
 
 const startUpload = () => {
   fs.createReadStream(CSV_PATH)
